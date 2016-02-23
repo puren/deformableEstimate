@@ -116,7 +116,7 @@ catkin_package(
 # include_directories(include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
-  sm_eigen3d/include
+  /media/Raid/home/puren/project/sm_eigen3d/include
 )
 
 find_package(Eigen REQUIRED)
@@ -136,8 +136,8 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 # add_dependencies(my_pcl_tutorial ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 # Add project files
-file( GLOB  source_files *.cpp sm_eigen3d/source/deformable.cpp)
-file( GLOB  header_files *.hpp *.h sm_eigen3d/include/deformable.h)
+file( GLOB  source_files *.cpp /media/Raid/home/puren/project/sm_eigen3d/source/deformable.cpp)
+file( GLOB  header_files *.hpp *.h /media/Raid/home/puren/project/sm_eigen3d/include/deformable.h)
 
 ## Declare a C++ executable
  add_executable(readTwoPCL src/readTwoPCL.cpp ${source_files} ${header_files})
