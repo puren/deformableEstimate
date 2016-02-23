@@ -1,0 +1,107 @@
+/*#include <ros/ros.h>
+// PCL specific includes
+#include <sensor_msgs/PointCloud2.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <std_msgs/Float32.h>
+
+ros::Publisher pub;
+
+void 
+cloud_cb (const sensor_msgs::PointCloud2ConstPtr& input)
+{
+ // Convert the sensor_msgs/PointCloud2 data to pcl/PointCloud
+  pcl::PointCloud<pcl::PointXYZI> cloud;
+  pcl::fromROSMsg (*input, cloud);
+
+  
+  std_msgs::Float32 beta;
+  float b =15;
+  beta.data = b;
+  pub.publish (beta);
+
+
+}
+
+int
+main (int argc, char** argv)
+{
+  // Initialize ROS
+  ros::init (argc, argv, "my_pcl_tutorial");
+  ros::NodeHandle nh;
+
+  // Create a ROS subscriber for the input point cloud
+  ros::Subscriber sub = nh.subscribe ("input", 1, cloud_cb);
+
+  // Create a ROS publisher for the output point cloud
+  pub = nh.advertise<std_msgs::Float32> ("output", 1);
+
+  // Spin
+  ros::spin ();
+}*/
+
+
+#include <ros/ros.h>
+#include <sensor_msgs/PointCloud2.h>
+
+// PCL specific includes
+
+#include <pcl/ros/conversions.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+
+#include <pcl/visualization/cloud_viewer.h>
+#include <iostream>
+#include <pcl/io/io.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/common/transforms.h>
+
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
+
+ /************************************   End of Header Files   **************************/
+
+    using namespace sensor_msgs;
+    using namespace message_filters;
+
+    ros::Publisher pub_sub1_sub2;
+
+    void cloud_cb ( const sensor_msgs::PointCloud2ConstPtr& sub2_input,  
+                   const sensor_msgs::PointCloud2ConstPtr& sub1_input)
+ {
+     //processing
+     std::cout<< " I am here! " <<std::endl;
+      pub_sub1_sub2.publish (*sub2_input);
+
+ }
+
+    int main (int argc, char** argv)
+    {
+              // Initialize ROS
+              ros::init (argc, argv, "testing");
+              ros::NodeHandle nh;
+              ROS_INFO("Starting ");
+
+              message_filters::Subscriber<sensor_msgs::PointCloud2> sub2(nh, "topic1", 1);
+              message_filters::Subscriber<sensor_msgs::PointCloud2> sub1(nh, "topic2", 1);
+
+typedef sync_policies::ApproximateTime<sensor_msgs::PointCloud2, sensor_msgs::PointCloud2> MySyncPolicy;
+
+      // ApproximateTime takes a queue size as its constructor argument, hence MySyncPolicy(10)
+              Synchronizer<MySyncPolicy> sync(MySyncPolicy(2), sub2, sub1);
+              sync.registerCallback(boost::bind(&cloud_cb, _1, _2));
+               pub_sub1_sub2 = nh.advertise<sensor_msgs::PointCloud2> ("/cloud", 1);    
+
+              // Spin
+              ros::spin ();
+               return 0;
+
+       }
