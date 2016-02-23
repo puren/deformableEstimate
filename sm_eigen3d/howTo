@@ -1,0 +1,12 @@
+g++ -std=c++11 -Wall -g -I/usr/local/include/eigen3/ -I/usr/local/include/opencv2 -L/usr/local/lib -lopencv_core -lopencv_highgui -lopencv_imgproc -I./include/ main.cpp source/deformable.cpp -o def
+
+to build estimation visual
+g++ -std=c++11 -Wall -g -I/opt/local/include/ -I/usr/local/include/eigen3/ -I/usr/local/include/opencv2 -L/usr/local/lib -lopencv_core -lopencv_highgui -lopencv_imgproc -lboost_filesystem -lboost_system -I./include/ main.cpp source/deformable.cpp -o def
+
+to run: ./def_est_sim /Users/puren/projects/sm_eigen/data07 /Users/puren/projects/sm_eigen/estimationResults/beta07
+
+demo run: ./def_est_sim /Users/puren/projects/sm_eigen/data07 /Users/puren/projects/sm_eigen/estimationResults/beta07
+
+
+
+g++ -Wall -g main.cpp source/deformable.cpp-I/usr/include/ -I/usr/include/eigen3/ -I/usr/include/opencv2 -L/usr/local/gfortran/lib/ -L/usr/lib -lopencv_core -lopencv_highgui -lopencv_imgproc -lboost_filesystem -lboost_system -lgfortran -llapack -lblas -llevmar -I./include/ -o def

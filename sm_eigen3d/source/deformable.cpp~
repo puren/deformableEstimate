@@ -1,0 +1,832 @@
+#include "deformable.h"
+
+#include <Eigen/Dense>
+
+
+void DeformableParameters::setDefaults()
+{
+    timeStep = 0.01;
+    gravity(0)= 0.0;
+    gravity(1)= -9.81;
+    gravity(2)= 0.0;
+    
+    
+    bounds.min(0)=0.0;
+    bounds.min(1)=0.0;
+    bounds.min(2)=0.0;
+    bounds.max(0)=1.0;
+    bounds.max(1)=1.0;
+    bounds.max(2)=1.0;
+    
+    alpha = 1.0;
+    beta = 0.0;
+    lbeta.clear();
+    
+    quadraticMatch = false;
+    volumeConservation = false;
+    
+    allowFlip = false;
+    isCluster = false;
+    massToRadius=0.01;
+    offset=0.0;
+}
+
+Deformable::Deformable()
+{
+    reset();
+}
+
+Deformable::~Deformable()
+{
+}
+
+void Deformable::reset()
+{
+    //std::cout<<"reset"<<std::endl;
+    mNumVertices = 0;
+    mNumClusters = 0;
+    mOriginalPos.clear();
+    mPos.clear();
+    mNewPos.clear();
+    mGoalPos.clear();
+    mGoalPos_sum.clear();
+    mMasses.clear();
+    mVelocities.clear();
+    mFixed.clear();
+    v_pos.clear();
+    v_mass.clear();
+    indxCount.clear();
+    vert_cluster.clear();
+    
+    
+}
+
+void Deformable::initState()
+{
+    for (int i = 0; i < mNumVertices; i++) {
+        mPos[i] = mOriginalPos[i];
+        mNewPos[i] = mOriginalPos[i];
+        mGoalPos[i] = mOriginalPos[i];
+        mVelocities[i] = Eigen::Vector3d(0.0,0.0,0.0);
+        mFixed[i] = false;
+        std::vector<int> c_indices;
+        vert_cluster.push_back(c_indices);
+        mGoalPos_sum[i] = Eigen::Vector3d(0.0,0.0,0.0);
+    }
+}
+
+void Deformable::addVertex(const Eigen::Vector3d pos, double mass)
+{
+    mOriginalPos.push_back(pos);
+    mPos.push_back(pos);
+    mNewPos.push_back(pos);
+    mGoalPos.push_back(pos);
+    mGoalPos_sum.push_back(Eigen::Vector3d(0.0,0.0,0.0));
+    mMasses.push_back(mass);
+    mVelocities.push_back(Eigen::Vector3d(0.0,0.0,0.0));
+    mFixed.push_back(false);
+    mNumVertices++;
+    
+    //cluster
+    indxCount.push_back(0);
+    //
+    
+    initState();
+}
+
+int Deformable::isThere(const Eigen::Vector3d pos)
+{
+	/*int i_pos = std::find(mOriginalPos.begin(), mOriginalPos.end(), pos) - mOriginalPos.begin();
+	if(i_pos < mOriginalPos.size()) {
+		return i_pos;
+	} else {
+		return -i_pos;
+	}*/
+	
+	double epsilon =  0.001;
+	for(int i=0; i<mNumVertices; i++)
+	{
+	    //std::cout<<mOriginalPos.at(i)(0)<<" "<<mOriginalPos.at(i)(1)<<" "<<mOriginalPos.at(i)(2)<<std::endl;
+	    //std::cout<<pos(0)<<" "<<pos(1)<<" "<<pos(2)<<std::endl;
+	    
+		if( (std::abs(mOriginalPos.at(i)(0) - pos(0)) < epsilon) && 
+			(std::abs(mOriginalPos.at(i)(1) - pos(1)) < epsilon) )
+			//&&
+			//(std::abs(mOriginalPos.at(i)(2) - pos(2)) < epsilon) )
+		{
+			return i;
+		}
+		//std::cout<<std::endl;
+	}
+	return -1;
+}
+
+void Deformable::clusterVertex()
+{
+
+	std::cout<<"**********m: "<<params.m<<" n: "<<params.n<<" p: "<<params.p<<std::endl;
+	
+	//params.m=16; params.n=16; params.p=1;
+    //std::cout<<"clusters"<<std::endl;
+    int cluster_sizex=1;
+    int cluster_sizey=1;
+    int cluster_sizez=1;
+    if (params.m>=params.cluster_size(0)) {
+        cluster_sizex=params.cluster_size;
+    }
+    if (params.n>=params.cluster_size) {
+        cluster_sizey=params.cluster_size;
+    }
+    if (params.p>=params.cluster_size) {
+        cluster_sizez=params.cluster_size;
+    }
+    int x=params.m-cluster_sizex+1;
+    int y=params.n-cluster_sizey+1;
+    int z=params.p-cluster_sizez+1;
+    
+   
+    
+    /*Eigen::Vector3d pos;
+    Eigen::Vector3d pos_n;
+    
+    int i_pos;
+    
+    double wx=0.009, wy=0.009, wz=0.01;
+    double stepx=1, stepy=1, stepz=1;
+    
+    for(int i=0; i<mNumVertices; i++)
+    {
+    	//std::cout<<"vert_cluster.at(i).size() "<<vert_cluster.at(i).size()<<std::endl;
+        //if(vert_cluster.at(i).size()<1)
+        {
+        	pos = mOriginalPos.at(i);
+        	std::vector<int> row;
+        	
+        	std::cout<<"cluster:"<<mNumClusters<<std::endl;
+        	std::cout<<"pos:\n"<<pos<<std::endl;
+        	
+        	int count =0;
+        	for(double k=0; k<=wx; k = k+ wx)
+            {
+                for(double l=0; l<=wy; l =l+wy)
+                {
+                    for(double r=0; r<=wz; r =r+wz)
+                    {
+        				pos_n(0) = pos(0)+k; pos_n(1) = pos(1)+l; pos_n(2) = pos(2)+r;
+        				//std::cout<<"neighbor pos\n"<< " "<<k<<" "<<l<<" "<<r<<std::endl;
+        				i_pos = isThere(pos_n);
+        				std::cout<<"neighbor pos "<<i_pos<< " "<<pos_n(0)<<" "<<pos_n(1)<<" "<<pos_n(2)<<std::endl;
+        				if(i_pos >= 0)
+       					{
+       						row.push_back(i_pos);
+					   		
+					   		count++;
+       					}
+       				}
+       			}
+       		}	
+       		
+       		if(count>=8)
+       		{
+       			mClusters.push_back(row);
+       			params.lbeta.push_back(params.beta);
+       			
+       			for(int j=0; j<row.size(); j++)
+       			{ 
+       				indxCount.at(row.at(j)) +=1;
+		        	vert_cluster.at(row.at(j)).push_back(mNumClusters);
+		        	std::cout<<mOriginalPos.at(row.at(j))<<std::endl;
+				}   		
+        		mNumClusters++;	
+        	}	
+        	
+		}
+    }*/
+
+    for(int i=0; i<z; i++)
+    {
+        for(int j=0; j<y; j++)
+        {
+            for(int o=0; o<x; o++)
+            {
+                std::vector<int> row;
+                //std::cout<<"cluster:"<<mNumClusters<<std::endl;
+                //get the vertices in the cluster
+                for(int k=0; k<cluster_sizez; k++)
+                {
+                    for(int l=0; l<cluster_sizey; l++)
+                    {
+                        for(int r=0; r<cluster_sizex; r++)
+                        {
+                            int p=(i+k)*params.n*params.m+(j+l)*params.m + (o+r);
+                            /*std::cout<<"m:"<<params.m<<" n:"<<params.n<<std::endl;
+                            std::cout<<p<<std::endl;
+                            std::cout<<(i+k)<<" "<<(j+l)<<" "<<(o+r)<<std::endl;
+                            std::cout<<"original pos\n"<<mOriginalPos.at(p)<<std::endl;*/
+                            row.push_back(p);
+                            indxCount.at(p) +=1;
+                            vert_cluster.at(p).push_back(mNumClusters);
+                        }
+                    }
+                }
+                //std::cout<<std::endl;
+                mClusters.push_back(row);//put the cluster
+                params.lbeta.push_back(params.beta);
+                mNumClusters++;
+            }
+        }
+    }
+    
+     
+
+}
+
+void Deformable::externalForces()
+{
+    int i;
+    
+    
+    for (i = 0; i < mNumVertices; i++) {
+        
+        if (mFixed.at(i))
+        {
+            continue;
+        }
+        mVelocities.at(i) += params.gravity * params.timeStep;
+        mNewPos.at(i) = mPos.at(i) + mVelocities.at(i) * params.timeStep;
+        mGoalPos.at(i) = mOriginalPos.at(i);
+        //std::cout<<i<<" "<<mNewPos.at(i)(0) <<","<< mNewPos.at(i)(1)<<" "<<mNewPos.at(i)(2)<<std::endl;
+        
+        
+    }
+    //double offset = 0.0;
+    //boundaries
+    double restitution = 1;
+    for (i = 0; i < mNumVertices; i++) {
+        if (mFixed.at(i))
+        {
+            continue;
+        }
+        /*if (mNewPos.at(i)(0) < params.bounds.min(0) || mNewPos.at(i)(0) > params.bounds.max(0)) {
+            mNewPos.at(i)(0) = mPos.at(i)(0) - mVelocities.at(i)(0) * params.timeStep * restitution;
+            
+        }
+        if (mNewPos.at(i)(1) < params.bounds.min(1) || mNewPos.at(i)(1) > params.bounds.max(1)) {
+            mNewPos.at(i)(1) = mPos.at(i)(1) - mVelocities.at(i)(1) * params.timeStep * restitution;
+            
+        }
+        if (mNewPos.at(i)(2) < params.bounds.min(2)|| mNewPos.at(i)(2) > params.bounds.max(2)) {
+            mNewPos.at(i)(2) = mPos.at(i)(2) - mVelocities.at(i)(2) * params.timeStep * restitution;
+            
+        }*/
+        // params.bounds.clamp(mNewPos[i]);
+        //clamp
+        if (mNewPos.at(i)(0) < params.bounds.min(0) )
+        {
+            mNewPos.at(i)(0) = params.bounds.min(0) ;
+        }
+        if (mNewPos.at(i)(0) > params.bounds.max(0) )
+        {
+            mNewPos.at(i)(0) = params.bounds.max(0) ;
+        }
+        
+        if (mNewPos.at(i)(1) < params.bounds.min(1) )
+        {
+            mNewPos.at(i)(1) = params.bounds.min(1) ;
+        }
+        if (mNewPos.at(i)(1) > params.bounds.max(1) )
+        {
+            mNewPos.at(i)(1) = params.bounds.max(1) ;
+        }
+        
+        if (mNewPos.at(i)(2) < params.bounds.min(2) )
+        {
+            mNewPos.at(i)(2) = params.bounds.min(2) ;
+        }
+        if (mNewPos.at(i)(2) > params.bounds.max(2) )
+        {
+            mNewPos.at(i)(2) = params.bounds.max(2) ;
+        }
+        
+         //std::cout<<mNewPos.at(i)(0)<<" "<<mNewPos.at(i)(1)<<" "<<mNewPos.at(i)(2)<<std::endl;
+    }
+    //std::cout<<std::endl;
+}
+
+
+
+void Deformable::projectPositions()
+{
+    if (mNumVertices <= 1) return;
+    int i,j,k;
+    
+    // center of mass
+    Eigen::Vector3d cm, originalCm;
+    cm.setZero(); originalCm.setZero();
+    double mass = 0.0;
+    
+    for (i = 0; i < mNumVertices; i++) {
+        double m = mMasses.at(i);
+        if (mFixed.at(i)) m *= 100.0;
+        mass += m;
+        cm += mNewPos.at(i) * m;
+        originalCm += mOriginalPos.at(i) * m;
+    }
+    cm /= mass;
+    originalCm /= mass;
+    
+    
+    Eigen::Matrix3d Apq;
+    Eigen::Matrix3d Aqq;
+    Eigen::Vector3d p;
+    Eigen::Vector3d q;
+    Apq.setZero();
+    Aqq.setZero();
+    
+    for (i = 0; i < mNumVertices; i++) {
+        p = mNewPos.at(i) - cm;
+        
+        q = mOriginalPos.at(i) - originalCm;
+    
+        double m = mMasses.at(i);
+        Apq += m*p*q.transpose();
+        Aqq += m*q*q.transpose();
+    }
+    
+    if (!params.allowFlip && Apq.determinant() < 0.0f) {  	// prevent from flipping
+        Apq(0,1) = -Apq(0,1);
+        Apq(1,1) = -Apq(1,1);
+        Apq(2,1) = -Apq(2,1);
+    }
+  
+    Eigen::Matrix3d R;
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(Apq, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    Eigen::MatrixXd U = svd.matrixU();
+    Eigen::MatrixXd V = svd.matrixV();
+    R = U*V.transpose();
+    
+    /* std::cout<<"A\n";
+        std::cout<<Apq<<std::endl;
+        std::cout<<"R\n";
+        std::cout<<R<<std::endl;
+        std::cout<<"originalCm\n";
+        std::cout<<originalCm<<std::endl;
+        std::cout<<"cm\n";
+        std::cout<<cm<<std::endl;*/
+    if (!params.quadraticMatch) {	// --------- linear match
+        
+        Eigen::Matrix3d A = Aqq;
+        Eigen::Matrix3d A_=A.inverse();
+        
+        A = Apq*A_;
+    
+        if (params.volumeConservation) {
+            double det = A.determinant();
+            if(det<0) det=-det;
+            if (det != 0.0) {
+                det = 1.0 / pow(fabs(det), 1/3);
+                //if (det > 2.0) det = 2.0;
+                A *= det;
+            }
+        }
+       
+        
+        double one_beta   = 1.0 - params.beta;
+        Eigen::Matrix3d T = R * one_beta;
+        
+        A=A*params.beta;
+        T = T + A;
+        
+        for (i = 0; i < mNumVertices; i++) {
+            if (mFixed.at(i)) continue;
+            q = mOriginalPos.at(i) - originalCm;
+            Eigen::Vector3d Tq = T*q;
+            mGoalPos.at(i) = Tq+cm;
+            //std::cout<<i<<" "<<mNewPos.at(i)(0) <<","<< mNewPos.at(i)(1)<<" "<<mNewPos.at(i)(2)<<std::endl;
+            
+            mNewPos.at(i) += (mGoalPos.at(i) - mNewPos.at(i)) * params.alpha;
+            
+        }
+        
+        /*std::cout<<"initial pos\n";
+        for (i = 0; i < mNumVertices; i++) {
+            std::cout<<mOriginalPos.at(i)<<std::endl;
+        }
+        std::cout<<"\n";
+        std::cout<<"goal pos\n";
+        for (i = 0; i < mNumVertices; i++) {
+            std::cout<<mGoalPos.at(i)<<std::endl;
+        }*/
+
+    }
+    else
+    {
+        Eigen::MatrixXd A9pq(3, 9);
+        A9pq.setZero();
+        Eigen::MatrixXd A9qq(9, 9);
+        A9qq.setZero();
+    
+        for (i=0; i<mNumVertices; i++) {
+            p = mNewPos.at(i)- cm;
+            q = mOriginalPos.at(i) - originalCm;
+            Eigen::VectorXd q9(9);
+            q9(0)=q(0);      q9(1)=q(1);      q9(2)=q(2);
+            q9(3)=q(0)*q(0); q9(4)=q(1)*q(1); q9(5)=q(2)*q(2);
+            q9(6)=q(0)*q(1); q9(7)=q(1)*q(2); q9(8)=q(2)*q(0);
+            
+            double m = mMasses.at(i);
+            for (j=0; j<3; j++) {
+                for (k=0; k<9; k++) {
+                    A9pq(j,k) += m * p(j) * q9(k);
+                }
+            }
+            
+            for (j=0; j<9; j++) {
+                for (k=0; k<9; k++) {
+                    A9qq(j,k) += m*q9(j)*q9(k);
+                }
+            }
+        }
+        
+        Eigen::MatrixXd A9qq_i = A9qq.inverse();
+        Eigen::MatrixXd A9(3, 9);
+        for (i=0; i<3; i++) {
+            for (j=0; j<9; j++) {
+                A9(i,j) = 0.0;
+                for (k=0; k<9; k++) {
+                    A9(i,j) += A9pq(i,k)*A9qq_i(k,j);
+                }
+                A9(i,j) *= params.beta;
+                if (j<3) {
+                    A9(i,j) += (1.0 - params.beta) * R(i,j);
+                }
+            }
+        }
+        Eigen::Matrix3d A9_3;
+        A9_3(0,0)=A9(0,0); A9_3(0,1)=A9(0,1); A9_3(0,2)=A9(0,2);
+        A9_3(1,0)=A9(1,0); A9_3(1,1)=A9(1,1); A9_3(1,2)=A9(1,2);
+        A9_3(2,0)=A9(2,0); A9_3(2,1)=A9(2,1); A9_3(2,2)=A9(2,2);
+        double det = A9_3.determinant();
+        if (!params.allowFlip && det<0.0) {
+            A9_3(0,1)=-A9_3(0,1);
+            A9_3(1,1)=-A9_3(1,1);
+            A9_3(2,1)=-A9_3(2,1);
+        }
+        if (params.volumeConservation) {
+            if (det != 0.0f) {
+                det = 1.0f / pow(fabs(det), 1/3);
+                //if (det > 2.0f) det = 2.0f;
+                A9(0,0)=A9(0,0)*det; A9(0,1)=A9(0,1)*det; A9(0,2)=A9(0,2)*det;
+                A9(1,0)=A9(1,0)*det; A9(1,1)=A9(1,1)*det; A9(1,2)=A9(1,2)*det;
+                A9(2,0)=A9(2,0)*det; A9(2,1)=A9(2,1)*det; A9(2,2)=A9(2,2)*det;
+               
+            }
+        }
+        
+        for (i = 0; i < mNumVertices; i++) {
+            if (mFixed.at(i)) continue;
+            q = mOriginalPos.at(i) - originalCm;
+            Eigen::VectorXd q9(9);
+            q9(0)=q(0);      q9(1)=q(1);      q9(2)=q(2);
+            q9(3)=q(0)*q(0); q9(4)=q(1)*q(1); q9(5)=q(2)*q(2);
+            q9(6)=q(0)*q(1); q9(7)=q(1)*q(2); q9(8)=q(2)*q(0);
+            
+            for (j=0; j<3; j++) {
+                mGoalPos.at(i)(j)=0.0;
+                for (k=0; k<9; k++) {
+                    mGoalPos.at(i)(j) += A9(j,k) * q9(k);
+                }
+                mGoalPos.at(i)(j) += cm(j);
+                mNewPos.at(i)(j)  += (mGoalPos.at(i)(j) - mNewPos.at(i)(j)) * params.alpha;
+            }
+        }
+    }
+}
+
+void Deformable::projectPositionsCluster(std::vector<int> cluster, int cluster_indx)
+{
+    int numVertices =  cluster.size();
+    if (numVertices <= 1) return;
+    int i;//,j,k;
+    //double beta_cluster =params.lbeta.at(cluster_indx);
+    
+    // center of mass
+    Eigen::Vector3d cm, originalCm;
+    cm.setZero(); originalCm.setZero();
+    double mass = 0.0;
+    int indx;
+    for (i = 0; i < numVertices; i++) {
+        indx= cluster.at(i);
+        double m = mMasses.at(indx);
+        if (mFixed.at(indx)) m *= 100.0;
+        //if (indx == 10) m *= 100.0;
+        mass += m;
+        cm += mNewPos.at(indx) * m;
+        originalCm += mOriginalPos.at(indx) * m;
+        //std::cout<<"before: "<<mOriginalPos.at(indx)<<std::endl;
+    }
+    
+    cm /= mass;
+    originalCm /= mass;
+    
+    Eigen::Matrix3d Apq;
+    Eigen::Matrix3d Aqq;
+    Eigen::Vector3d p;
+    Eigen::Vector3d q;
+    Apq.setZero();
+    Aqq.setZero();
+    
+    for (i = 0; i < numVertices; i++) {
+        indx= cluster.at(i);
+        p = mNewPos.at(indx) - cm;
+        
+        q = mOriginalPos.at(indx) - originalCm;
+        
+        double m = mMasses.at(indx);
+        Apq += m*p*q.transpose();
+        Aqq += m*q*q.transpose();
+    }
+    
+    if (!params.allowFlip && Apq.determinant() < 0.0f)
+    {  	
+    	std::cout<<"prevent from flipping\n"<<std::endl;
+        Apq(0,1) = -Apq(0,1);
+        Apq(1,1) = -Apq(1,1);
+        Apq(2,1) = -Apq(2,1);
+    }
+    
+    Eigen::Matrix3d R;
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(Apq, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    Eigen::MatrixXd U = svd.matrixU();
+    Eigen::MatrixXd V = svd.matrixV();
+    R = U*V.transpose();
+    
+    
+    Eigen::Matrix3d A = Aqq;
+    A = Apq*A.inverse();
+    
+    if (params.volumeConservation) {
+        double det = A.determinant();
+        if(det<0) det=-det;
+        if (det != 0.0) {
+            det = 1.0 / pow(fabs(det), 1/3);
+            //if (det > 2.0) det = 2.0;
+            A *= det;
+        }
+    }
+    
+    Eigen::Matrix3d T = R * (1.0 - params.beta) + A * params.beta;
+    
+    /*//print cm of initial
+    std::cout<<"original cm\n"<<originalCm<<std::endl;
+    //print cm of new
+    std::cout<<"new cm\n"<<cm<<std::endl;
+    //print A
+    std::cout<<"A"<<std::endl;
+    std::cout<<A<<std::endl;
+    //print R
+    std::cout<<"R"<<std::endl;
+    std::cout<<R<<std::endl;*/
+    
+    
+   /* std::cout<<"initial pos\n";
+    for (i = 0; i < numVertices; i++) {
+        indx= cluster.at(i);
+        std::cout<<mOriginalPos.at(indx)<<std::endl;
+    }
+    std::cout<<"\n";
+    std::cout<<"new pos\n";
+    for (i = 0; i < numVertices; i++) {
+        indx= cluster.at(i);
+        std::cout<<mNewPos.at(indx)<<std::endl;
+    }*/
+
+    //std::cout<<"\n";
+    //std::cout<<"goal pos\n";
+    for (i = 0; i < numVertices; i++) {
+        indx= cluster.at(i);
+        if (mFixed.at(indx)) continue;
+        q = mOriginalPos.at(indx) - originalCm;
+       
+        Eigen::Vector3d Tq = T*q;
+        
+        mGoalPos.at(indx) = Tq+cm;
+        
+        mGoalPos_sum.at(indx) += mGoalPos.at(indx);
+        
+    
+        //print goal
+        //std::cout<<mGoalPos.at(indx)<<std::endl;
+    }
+    
+}
+
+void Deformable::integrate()
+{
+    double dt1 = 1.0 / params.timeStep;
+    for (int i = 0; i < mNumVertices; i++) {
+        mVelocities.at(i) = (mNewPos.at(i) - mPos.at(i)) * dt1;
+        mPos.at(i) = mNewPos.at(i);
+        /*if(mFixed.at(i) && mNewPos.at(i)(2)<params.bounds.min(2))
+        {
+        	params.bounds.min(2) = mNewPos.at(i)(2);
+        	//std::cout<<"after: "<<mNewPos.at(i)<<" "<<indxCount.at(i)<<std::endl;
+     
+        }*/
+               
+    }
+}
+
+void Deformable::timeStep()
+{
+    externalForces();
+    
+    if( params.isCluster)
+    {
+        for(int i=0; i<mNumClusters; i++)
+        {
+            std::vector<int> cluster= mClusters.at(i);
+            //std::cout<<"------cluster "<<i<<std::endl;
+            projectPositionsCluster(cluster, i);
+            //std::cout<<"-------------"<<std::endl;
+
+        }
+        
+        for (int i=0; i<mNumVertices; i++)
+        {
+        	
+            if (mFixed.at(i))
+            {
+                continue;
+            }
+            //std::cout<<"before: "<<mNewPos.at(i)<< "\n"<<std::endl;
+            mGoalPos.at(i) = mGoalPos_sum.at(i)/indxCount.at(i);
+            mNewPos.at(i) += (mGoalPos.at(i) - mNewPos.at(i)) * params.alpha;
+            
+            
+            
+            
+            //std::cout<<"indxCount: "<<i<<" "<<indxCount.at(i)<<std::endl;
+            mGoalPos_sum.at(i)=Eigen::Vector3d(0.0,0.0,0.0);
+        }
+        
+        //std::fill(indxCount.begin(), indxCount.end(), 0);
+    }
+    else
+    {
+        projectPositions();
+    }
+
+    
+    integrate();
+}
+
+void Deformable::setVertexPos(int nr, const Eigen::Vector3d pos)
+{
+    mPos.at(nr) = pos;
+}
+
+void Deformable::setVel(int nr, const Eigen::Vector3d vel)
+{
+    mVelocities.at(nr) = vel;
+}
+
+void Deformable::fixVertex(int nr, const Eigen::Vector3d pos)
+{
+    mNewPos.at(nr) = pos;
+    mFixed.at(nr) = true;
+}
+
+void Deformable::releaseVertex(int nr)
+{
+    mFixed.at(nr)=false;
+}
+
+void Deformable::loadFromArray(std::vector<Eigen::Vector3d> l_vertices)
+{
+    int numVerts;
+    numVerts = int(l_vertices.size());
+    int i;
+    double mass=0.1;
+    Eigen::Vector3d pos;
+    for (i = 0; i < numVerts; i++) {
+        pos = l_vertices.at(i);
+        addVertex(pos, mass);
+    }
+    initState();
+}
+
+/*void Deformable::saveToFile(char *filename)
+{
+    FILE *f = fopen(filename, "w");
+    if (!f) return;
+    
+    fprintf(f, "%i\n", mNumVertices);
+    for (int i = 0; i < mNumVertices; i++) {
+        fprintf(f, "%lf %lf %lf %lf\n", mPos.at(i)(0), mPos.at(i)(1), mPos.at(i)(2), mMasses.at(i));
+    }
+    fprintf(f, "%lf\n", params.timeStep);
+    fprintf(f, "%lf %lf %lf\n", params.gravity(0), params.gravity(1), params.gravity(2));
+    
+    fprintf(f, "%lf\n", params.alpha);
+    fprintf(f, "%lf\n", params.beta);
+    std::cout<<params.beta<<std::endl;
+    
+    fprintf(f, "%i\n", params.quadraticMatch);
+    fprintf(f, "%i\n", params.volumeConservation);
+    fprintf(f, "%i\n", params.allowFlip);
+    fprintf(f, "%i\n", params.isCluster);
+    std::cout<<params.quadraticMatch<<std::endl;
+    std::cout<<params.volumeConservation<<std::endl;
+    std::cout<<params.allowFlip<<std::endl;
+    
+    fclose(f);
+}
+*/
+
+void Deformable::loadFromFile(std::string filename)
+{
+    /*FILE *f = fopen(filename, "r");
+    if (!f)
+    {
+        std::cout<<"no file"<<" "<<filename<<std::endl;
+        return;
+    }*/
+
+    std::ifstream myfile (filename.c_str());
+    if (!myfile.is_open())
+    {
+        //std::cout<<"no file loadFromFile"<<" "<<filename<<std::endl;
+        return;
+    }
+    
+    std::cout<<"the file"<<" "<<filename<<" is being read."<<std::endl;
+    std::string s;
+    s="";
+    Eigen::Vector3d pos;
+    double mass;
+    int i, min_x, min_y, min_z, max_x, max_y, max_z, numVert, c_x, c_y, c_z;
+    double x, y, z;
+    
+    reset();
+    
+    int original;
+    std::getline(myfile, s); sscanf(s.c_str(), "%i %i %i", &min_x, &min_y, &min_z);
+    std::getline(myfile, s); sscanf(s.c_str(), "%i %i %i", &max_x, &max_y, &max_z);
+    std::getline(myfile, s); sscanf(s.c_str(), "%i", &numVert);
+    
+    params.bounds.min(0) = min_x;
+    params.bounds.min(1) = min_y;
+    params.bounds.min(2) = min_z;
+    params.bounds.max(0) = max_x;
+    params.bounds.max(1) = max_y;
+    params.bounds.max(2) = max_z;
+    //std::getline(myfile, s); sscanf(s.c_str(), "%i %i %i", &m, &n, &p);
+    //params.m=m; //col
+    //params.n=n; //row
+    //params.p=p; //depth
+    //int numVerts=m*n*p;
+    for (int i=0; i<numVert; i++ ) {
+        std::getline(myfile, s);
+        sscanf(s.c_str(), "%lf %lf %lf %lf", &x, &y, &z, &mass);
+		//std::cout<<x<<" "<<y<<" "<<z<<" "<<mass<<std::endl;
+        
+        pos(0)=x;
+        pos(1)=y;
+        pos(2)=z;
+        addVertex(pos, mass);
+    }
+    std::cout<<"numOfVert:"<<numVert<<std::endl;
+    std::getline(myfile, s); sscanf(s.c_str(), "%lf", &params.timeStep);
+    std::cout<<"time step: "<<params.timeStep<<std::endl;
+    std::getline(myfile, s); sscanf(s.c_str(), "%lf %lf %lf", &params.gravity(0), &params.gravity(1), &params.gravity(2));
+    std::cout<<"gravity: "<<params.gravity(0)<<" "<<params.gravity(1)<<" "<<params.gravity(2)<<std::endl;
+    
+    std::getline(myfile, s); sscanf(s.c_str(), "%lf", &params.alpha);
+    std::cout<<"alpha: "<<params.alpha<<std::endl;
+    std::getline(myfile, s); sscanf(s.c_str(), "%lf", &params.beta);
+    std::cout<<"beta: "<<params.beta<<std::endl;
+    
+    std::getline(myfile, s); sscanf(s.c_str(), "%i", &i); params.quadraticMatch = i;
+    std::cout<<"quadratic: "<<params.quadraticMatch<<std::endl;
+    std::getline(myfile, s); sscanf(s.c_str(), "%i", &i); params.volumeConservation = i;
+    std::cout<<"volum convers: "<<params.volumeConservation<<std::endl;
+    std::getline(myfile, s); sscanf(s.c_str(), "%i", &i); params.allowFlip = i;
+    std::cout<<"allowFlip: "<<params.allowFlip<<std::endl;
+    std::getline(myfile, s); sscanf(s.c_str(), "%i", &i); params.isCluster = i;
+    std::cout<<"is cluster: "<<params.isCluster<<std::endl;
+    std::getline(myfile, s); sscanf(s.c_str(), "%lf", &params.massToRadius);
+    std::cout<<"mass to radius: "<<params.massToRadius<<std::endl;
+    std::getline(myfile, s); sscanf(s.c_str(), "%i %i %i", &c_x, &c_y, &c_z);
+	params.cluster_size(0) = c_x;
+	params.cluster_size(1) = c_y;
+	params.cluster_size(2) = c_z;
+	
+    myfile.close();
+    
+    //initState();
+    
+    if(params.isCluster)
+        clusterVertex();
+    
+}
